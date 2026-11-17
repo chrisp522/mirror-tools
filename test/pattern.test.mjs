@@ -7,6 +7,7 @@ import {
   bucketAddress,
   bucketAddressRegex,
   bucketPrefixRegex,
+  decodeFilename,
   localReferenceRegex,
   localiseBucketAddresses,
 } from "../src/pattern.mjs";
@@ -114,4 +115,15 @@ test("regex factories return fresh global regexes", () => {
   const b = bucketAddressRegex();
   assert.notEqual(a, b);
   assert.ok(a.global && bucketPrefixRegex().global && localReferenceRegex().global);
+});
+
+test("decodeFilename decodes percent sequences", () => {
+  assert.equal(decodeFilename("my%20image.webp"), "my image.webp");
+  assert.equal(decodeFilename("..%2Fx.webp"), "../x.webp");
+  assert.equal(decodeFilename("plain.webp"), "plain.webp");
+});
+
+test("decodeFilename keeps a name that cannot be decoded as written", () => {
+  assert.equal(decodeFilename("100%.webp"), "100%.webp");
+  assert.equal(decodeFilename("a%zzb.webp"), "a%zzb.webp");
 });

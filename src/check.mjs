@@ -7,9 +7,9 @@
 
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
-import { readTextFile, walkFiles } from "./files.mjs";
-import { BUCKET_HOST, LOCAL_DIR, localReferenceRegex } from "./pattern.mjs";
+import { join } from "node:path";
+import { projectPath, readTextFile, walkFiles } from "./files.mjs";
+import { BUCKET_HOST, LOCAL_DIR, decodeFilename, localReferenceRegex } from "./pattern.mjs";
 
 /** Build output folder, relative to the project root, with "/" separators. */
 export const OUTPUT_DIR = ".vercel/output";
@@ -43,19 +43,14 @@ export async function checkBuildOutput(root) {
   for await (const file of walkFiles(outputDir, shippedDir)) {
     const text = await readTextFile(file);
     if (text === null) continue;
-    const where = relative(root, file).split(sep).join("/");
+    const where = projectPath(root, file);
 
     if (text.includes(BUCKET_HOST)) {
       bucketHits.set(where, text.split(BUCKET_HOST).length - 1);
     }
 
     for (const match of text.matchAll(localReferenceRegex())) {
-      let filename = match[1];
-      try {
-        filename = decodeURIComponent(filename);
-      } catch {
-        // keep the raw name
-      }
+      const filename = decodeFilename(match[1]);
       if (shipped.has(filename)) continue;
       const referencedBy = missing.get(filename) ?? new Set();
       referencedBy.add(where);

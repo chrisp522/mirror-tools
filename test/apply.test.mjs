@@ -95,3 +95,14 @@ test("lists are sorted by filename", async (t) => {
   assert.deepEqual(result.kept, ["a.webp", "b.webp"]);
   assert.deepEqual(result.removed, ["c-old.webp", "z-old.webp"]);
 });
+
+test("a name that cannot be decoded downloads from the address as written and saves under that name", async (t) => {
+  const root = await makeProject(t, { "src/a.astro": "" });
+  const address = `${PREFIX}/100%.webp`;
+  const { fetch, calls } = fakeFetch({ [address]: "x" });
+  const wanted = new Map([["100%.webp", { address, files: new Set(["src/a.astro"]) }]]);
+  const result = await applySync(root, wanted, { fetch, prune: true });
+  assert.deepEqual(calls, [address]);
+  assert.deepEqual(result.added, ["100%.webp (1 bytes)"]);
+  assert.ok(existsSync(join(root, "public", "ploy-assets", "100%.webp")));
+});

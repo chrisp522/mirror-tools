@@ -13,9 +13,15 @@
  */
 
 import { existsSync } from "node:fs";
-import { join, relative, sep } from "node:path";
-import { readTextFile, walkFiles } from "../files.mjs";
-import { LOCAL_DIR, bucketAddress, bucketAddressRegex, bucketPrefixRegex } from "../pattern.mjs";
+import { join } from "node:path";
+import { projectPath, readTextFile, walkFiles } from "../files.mjs";
+import {
+  LOCAL_DIR,
+  bucketAddress,
+  bucketAddressRegex,
+  bucketPrefixRegex,
+  decodeFilename,
+} from "../pattern.mjs";
 
 /**
  * @typedef {Map<string, { address: string; files: Set<string> }>} Wanted
@@ -45,11 +51,11 @@ export async function collectReferences(root) {
   const problems = [];
 
   /** @param {string} file */
-  const where = (file) => relative(root, file).split(sep).join("/");
+  const where = (file) => projectPath(root, file);
 
   /** @param {string} uuid @param {string} rawName @param {string} file */
   function want(uuid, rawName, file) {
-    const filename = decodeURIComponent(rawName);
+    const filename = decodeFilename(rawName);
     if (!isSafeFilename(filename)) {
       problems.push(`unsafe filename "${filename}" in ${where(file)}`);
       return;
@@ -85,7 +91,7 @@ export async function collectReferences(root) {
         const declared = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*["'`]$/.exec(before);
         if (!declared) {
           problems.push(
-            `bucket prefix without a filename in ${where(file)}, and not a simple constant; add its files by hand or simplify the source`,
+            `bucket prefix without a filename in ${where(file)}, and not a simple constant. The sync reads only full addresses and a prefix held in a simple const, let or var joined in a template literal; see "What the sync can read" in the mirror-tools README`,
           );
           continue;
         }

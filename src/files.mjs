@@ -1,7 +1,7 @@
 // @ts-check
 // Reading a project's files as text, shared by the sync and the check.
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 
 /**
  * Every regular file under `dir`, depth first. Symlinks are skipped, and so is
@@ -17,6 +17,15 @@ export async function* walkFiles(dir, skipDir) {
     if (entry.isDirectory()) yield* walkFiles(path, skipDir);
     else if (entry.isFile()) yield path;
   }
+}
+
+/**
+ * A file's path relative to the project root, with "/" separators, for messages.
+ * @param {string} root
+ * @param {string} file
+ */
+export function projectPath(root, file) {
+  return relative(root, file).split(sep).join("/");
 }
 
 /**

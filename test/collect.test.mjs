@@ -83,7 +83,7 @@ test("reports a prefix that is not a simple constant", async (t) => {
   const { wanted, problems } = await collectReferences(root);
   assert.equal(wanted.size, 0);
   assert.deepEqual(problems, [
-    "bucket prefix without a filename in src/a.ts, and not a simple constant; add its files by hand or simplify the source",
+    "bucket prefix without a filename in src/a.ts, and not a simple constant. The sync reads only full addresses and a prefix held in a simple const, let or var joined in a template literal; see \"What the sync can read\" in the mirror-tools README",
   ]);
 });
 
@@ -109,4 +109,13 @@ test("a project with no src/ or public/ has nothing to collect", async (t) => {
   const { wanted, problems } = await collectReferences(root);
   assert.deepEqual(problems, []);
   assert.equal(wanted.size, 0);
+});
+
+test("a filename that cannot be decoded is kept as written, not a crash", async (t) => {
+  const root = await makeProject(t, { "src/a.astro": `"${PREFIX}/100%.webp"` });
+  const { wanted, problems } = await collectReferences(root);
+  assert.deepEqual(problems, []);
+  assert.deepEqual(plain(wanted), {
+    "100%.webp": { address: `${PREFIX}/100%.webp`, files: ["src/a.astro"] },
+  });
 });

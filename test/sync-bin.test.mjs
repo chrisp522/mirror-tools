@@ -38,3 +38,13 @@ test("exits non-zero on a prefix that is not a simple constant", async (t) => {
   assert.equal(run.status, 1);
   assert.match(run.stderr, /bucket prefix without a filename in src\/a\.ts, and not a simple constant/);
 });
+
+test("a source filename that cannot be decoded does not crash the sync", async (t) => {
+  const root = await makeProject(t, {
+    "src/a.astro": `"${PREFIX}/100%.webp"`,
+    "public/ploy-assets/100%.webp": "x",
+  });
+  const run = runBin("mirror-sync-assets", root);
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout, "added (0)\nremoved (0)\nkept (1)\n  100%.webp\n");
+});

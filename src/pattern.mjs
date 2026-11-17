@@ -48,6 +48,20 @@ export function bucketAddress(uuid, filename) {
 }
 
 /**
+ * The local filename for a filename as written in an address: percent
+ * sequences decoded ("my%20image.webp" -> "my image.webp"). A name that cannot
+ * be decoded (for example "100%.webp") is kept as written.
+ * @param {string} raw
+ */
+export function decodeFilename(raw) {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/**
  * Replace every bucket prefix in a piece of code with the local prefix.
  * @param {string} code
  */

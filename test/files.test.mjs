@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { join, relative, sep } from "node:path";
-import { readTextFile, walkFiles } from "../src/files.mjs";
+import { join } from "node:path";
+import { projectPath, readTextFile, walkFiles } from "../src/files.mjs";
 import { makeProject } from "../testing/fixture.mjs";
 
 test("walkFiles lists files under a folder and skips the given folder", async (t) => {
@@ -13,7 +13,7 @@ test("walkFiles lists files under a folder and skips the given folder", async (t
   });
   const found = [];
   for await (const file of walkFiles(root, join(root, "sub", "skip"))) {
-    found.push(relative(root, file).split(sep).join("/"));
+    found.push(projectPath(root, file));
   }
   assert.deepEqual(found.sort(), ["a.txt", "skip-not/d.txt", "sub/b.txt"]);
 });
@@ -25,4 +25,10 @@ test("readTextFile returns text, and null for a binary file", async (t) => {
   });
   assert.equal(await readTextFile(join(root, "a.txt")), "hello");
   assert.equal(await readTextFile(join(root, "b.bin")), null);
+});
+
+test("projectPath gives a path relative to the root with / separators", () => {
+  const root = join("/", "site");
+  assert.equal(projectPath(root, join(root, "src", "pages", "index.astro")), "src/pages/index.astro");
+  assert.equal(projectPath(root, join(root, "a.txt")), "a.txt");
 });
