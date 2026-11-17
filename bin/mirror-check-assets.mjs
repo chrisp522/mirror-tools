@@ -36,7 +36,7 @@ switch (result.status) {
       }
     }
     console.error(
-      `\nFix: run \`npx mirror-sync-assets\`, commit public/${LOCAL_DIR}/, and build again.` +
+      `\nFix: run \`node node_modules/mirror-tools/bin/mirror-sync-assets.mjs\`, commit public/${LOCAL_DIR}/, and build again.` +
         `\nIf the sync does not pick a file up, the source builds that address in a way the sync cannot read;` +
         ` see "When the check fails" in the mirror-tools README.`,
     );

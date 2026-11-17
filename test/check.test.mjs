@@ -41,7 +41,7 @@ test("fails on a leftover bucket address and counts hits per file", async (t) =>
   assert.equal(run.status, 1);
   assert.match(run.stderr, /^mirror-check-assets: FAILED\n/);
   assert.match(run.stderr, /Build output still points at storage\.googleapis\.com\/ployai:\n  \.vercel\/output\/static\/about\/index\.html \(2\)/);
-  assert.match(run.stderr, /Fix: run `npx mirror-sync-assets`/);
+  assert.match(run.stderr, /Fix: run `node node_modules\/mirror-tools\/bin\/mirror-sync-assets\.mjs`/);
 });
 
 test("fails when a referenced file was not shipped", async (t) => {
