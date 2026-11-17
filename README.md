@@ -51,7 +51,7 @@ The sync exits with an error, after doing what it can, when:
 Add it to the mirror's `package.json` as a git dependency, pinned to a tag:
 
 ```json
-"mirror-tools": "github:chrisp522/mirror-tools#v1.0.0"
+"mirror-tools": "github:chrisp522/mirror-tools#v1.0.1"
 ```
 
 Then install with the mirror's package manager. Node 20 or later. The package has no dependencies of its own.
