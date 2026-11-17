@@ -11,10 +11,6 @@
     "./vite": {
       "types": "./src/vite.d.mts",
       "default": "./src/vite.mjs"
-    },
-    "./pattern": {
-      "types": "./src/pattern.d.mts",
-      "default": "./src/pattern.mjs"
     }
   },
   "bin": {
