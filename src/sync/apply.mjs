@@ -1,7 +1,9 @@
 // @ts-check
 /**
  * Make public/ploy-assets/ hold exactly the files a project references:
- * download the missing ones and delete the ones nothing references any more.
+ * download the missing ones and, when `prune` is on, delete the ones nothing
+ * references any more. The caller turns the prune off when it could not read
+ * every reference, so committed copies of unread references are not deleted.
  *
  * Files already present are kept as they are: bucket filenames carry a hash or
  * timestamp prefix, so a name is treated as one fixed file.
@@ -11,13 +13,15 @@ import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { LOCAL_DIR } from "../pattern.mjs";
 
+/** @typedef {{ status: "done"; removed: string[] } | { status: "skipped" }} PruneResult */
+
 /**
  * @param {string} root project root
  * @param {import("./collect.mjs").Wanted} wanted from collectReferences
- * @param {{ fetch?: (address: string) => Promise<Response> }} [options] fetch is replaceable for tests
- * @returns {Promise<{ added: string[]; kept: string[]; removed: string[]; problems: string[] }>}
+ * @param {{ prune: boolean; fetch?: (address: string) => Promise<Response> }} options fetch is replaceable for tests
+ * @returns {Promise<{ added: string[]; kept: string[]; prune: PruneResult; problems: string[] }>}
  */
-export async function applySync(root, wanted, { fetch = globalThis.fetch } = {}) {
+export async function applySync(root, wanted, { prune, fetch = globalThis.fetch }) {
   const assetDir = join(root, "public", LOCAL_DIR);
   await mkdir(assetDir, { recursive: true });
   const present = new Set(
@@ -30,8 +34,6 @@ export async function applySync(root, wanted, { fetch = globalThis.fetch } = {})
   const added = [];
   /** @type {string[]} */
   const kept = [];
-  /** @type {string[]} */
-  const removed = [];
   /** @type {string[]} */
   const problems = [];
 
@@ -53,11 +55,14 @@ export async function applySync(root, wanted, { fetch = globalThis.fetch } = {})
     }
   }
 
+  if (!prune) return { added, kept, prune: { status: "skipped" }, problems };
+
+  /** @type {string[]} */
+  const removed = [];
   for (const filename of [...present].sort()) {
     if (wanted.has(filename)) continue;
     await rm(join(assetDir, filename));
     removed.push(filename);
   }
-
-  return { added, kept, removed, problems };
+  return { added, kept, prune: { status: "done", removed }, problems };
 }

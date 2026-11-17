@@ -48,3 +48,17 @@ test("a source filename that cannot be decoded does not crash the sync", async (
   assert.equal(run.status, 0, run.stderr);
   assert.equal(run.stdout, "added (0)\nremoved (0)\nkept (1)\n  100%.webp\n");
 });
+
+test("does not prune when the source has a reference it cannot read", async (t) => {
+  const root = await makeProject(t, {
+    "src/a.ts": `export default { base: "${PREFIX}" };\nconst hero = "/hero.webp";`,
+    "public/ploy-assets/hero.webp": "committed copy",
+  });
+  const run = runBin("mirror-sync-assets", root);
+  assert.equal(run.status, 1);
+  assert.equal(
+    run.stdout,
+    "added (0)\nremoved (skipped: the sync could not read every reference, so nothing was deleted)\nkept (0)\n",
+  );
+  assert.deepEqual(await readdir(join(root, "public", "ploy-assets")), ["hero.webp"]);
+});

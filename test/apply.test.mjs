@@ -36,12 +36,12 @@ test("downloads missing files, keeps present ones, prunes unreferenced ones", as
     "public/ploy-assets/.gitkeep": "",
   });
   const { fetch, calls } = fakeFetch({ [`${PREFIX}/new.webp`]: "new bytes" });
-  const result = await applySync(root, wantedOf(["kept.webp", "new.webp"]), { fetch });
+  const result = await applySync(root, wantedOf(["kept.webp", "new.webp"]), { fetch, prune: true });
 
   assert.deepEqual(result, {
     added: ["new.webp (9 bytes)"],
     kept: ["kept.webp"],
-    removed: ["stale.webp"],
+    prune: { status: "done", removed: ["stale.webp"] },
     problems: [],
   });
   assert.deepEqual(calls, [`${PREFIX}/new.webp`]);
@@ -54,7 +54,7 @@ test("downloads missing files, keeps present ones, prunes unreferenced ones", as
 test("creates public/ploy-assets/ when it does not exist", async (t) => {
   const root = await makeProject(t, { "src/a.astro": "" });
   const { fetch } = fakeFetch({ [`${PREFIX}/a.webp`]: "a" });
-  const result = await applySync(root, wantedOf(["a.webp"]), { fetch });
+  const result = await applySync(root, wantedOf(["a.webp"]), { fetch, prune: true });
   assert.deepEqual(result.added, ["a.webp (1 bytes)"]);
   assert.ok(existsSync(join(root, "public", "ploy-assets", "a.webp")));
 });
@@ -62,7 +62,7 @@ test("creates public/ploy-assets/ when it does not exist", async (t) => {
 test("saves a percent-encoded address under its decoded name", async (t) => {
   const root = await makeProject(t, { "src/a.astro": "" });
   const { fetch, calls } = fakeFetch({ [`${PREFIX}/my%20image.webp`]: "x" });
-  await applySync(root, wantedOf(["my image.webp"]), { fetch });
+  await applySync(root, wantedOf(["my image.webp"]), { fetch, prune: true });
   assert.deepEqual(calls, [`${PREFIX}/my%20image.webp`]);
   assert.ok(existsSync(join(root, "public", "ploy-assets", "my image.webp")));
 });
@@ -74,7 +74,7 @@ test("a failed download is a problem and leaves no file behind", async (t) => {
     [`${PREFIX}/offline.webp`]: new Error("network down"),
     [`${PREFIX}/ok.webp`]: "ok",
   });
-  const result = await applySync(root, wantedOf(["gone.webp", "offline.webp", "ok.webp"]), { fetch });
+  const result = await applySync(root, wantedOf(["gone.webp", "offline.webp", "ok.webp"]), { fetch, prune: true });
   assert.deepEqual(result.added, ["ok.webp (2 bytes)"]);
   assert.deepEqual(result.problems, [
     `download failed: ${PREFIX}/gone.webp: HTTP 404`,
@@ -91,9 +91,9 @@ test("lists are sorted by filename", async (t) => {
     "public/ploy-assets/c-old.webp": "",
   });
   const { fetch } = fakeFetch({});
-  const result = await applySync(root, wantedOf(["b.webp", "a.webp"]), { fetch });
+  const result = await applySync(root, wantedOf(["b.webp", "a.webp"]), { fetch, prune: true });
   assert.deepEqual(result.kept, ["a.webp", "b.webp"]);
-  assert.deepEqual(result.removed, ["c-old.webp", "z-old.webp"]);
+  assert.deepEqual(result.prune, { status: "done", removed: ["c-old.webp", "z-old.webp"] });
 });
 
 test("a name that cannot be decoded downloads from the address as written and saves under that name", async (t) => {
@@ -105,4 +105,20 @@ test("a name that cannot be decoded downloads from the address as written and sa
   assert.deepEqual(calls, [address]);
   assert.deepEqual(result.added, ["100%.webp (1 bytes)"]);
   assert.ok(existsSync(join(root, "public", "ploy-assets", "100%.webp")));
+});
+
+test("with prune off, downloads what it can and deletes nothing", async (t) => {
+  const root = await makeProject(t, {
+    "public/ploy-assets/kept.webp": "k",
+    "public/ploy-assets/unreferenced.webp": "u",
+  });
+  const { fetch } = fakeFetch({ [`${PREFIX}/new.webp`]: "n" });
+  const result = await applySync(root, wantedOf(["kept.webp", "new.webp"]), { fetch, prune: false });
+  assert.deepEqual(result, {
+    added: ["new.webp (1 bytes)"],
+    kept: ["kept.webp"],
+    prune: { status: "skipped" },
+    problems: [],
+  });
+  assert.deepEqual((await readdir(join(root, "public", "ploy-assets"))).sort(), ["kept.webp", "new.webp", "unreferenced.webp"]);
 });
