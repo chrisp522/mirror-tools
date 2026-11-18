@@ -6,7 +6,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { OTHER_PREFIX, PREFIX, makeProject, runBin } from "../testing/fixture.mjs";
 
-test("works from the current directory: keeps used files, prunes unused ones", async (t) => {
+test("works from the current directory: keeps used files and lists unused ones without deleting them", async (t) => {
   const root = await makeProject(t, {
     "src/pages/index.astro": `<img src="${PREFIX}/a.webp">`,
     "src/data/images.ts": `const STORAGE = "${PREFIX}";\nexport const b = \`\${STORAGE}/b.webp\`;`,
@@ -16,9 +16,13 @@ test("works from the current directory: keeps used files, prunes unused ones", a
   });
   const run = runBin("mirror-sync-assets", root);
   assert.equal(run.status, 0, run.stderr);
-  assert.equal(run.stdout, "added (0)\nremoved (1)\n  old.webp\nkept (2)\n  a.webp\n  b.webp\n");
+  assert.equal(
+    run.stdout,
+    "added (0)\nkept (2)\n  a.webp\n  b.webp\nnot referenced (left in place) (1)\n  old.webp\n" +
+      "To review and delete them: node node_modules/mirror-tools/bin/mirror-prune-assets.mjs\n",
+  );
   assert.equal(run.stderr, "");
-  assert.deepEqual((await readdir(join(root, "public", "ploy-assets"))).sort(), ["a.webp", "b.webp"]);
+  assert.deepEqual((await readdir(join(root, "public", "ploy-assets"))).sort(), ["a.webp", "b.webp", "old.webp"]);
 });
 
 test("exits non-zero and names the problem on a filename collision", async (t) => {
@@ -46,10 +50,10 @@ test("a source filename that cannot be decoded does not crash the sync", async (
   });
   const run = runBin("mirror-sync-assets", root);
   assert.equal(run.status, 0, run.stderr);
-  assert.equal(run.stdout, "added (0)\nremoved (0)\nkept (1)\n  100%.webp\n");
+  assert.equal(run.stdout, "added (0)\nkept (1)\n  100%.webp\nnot referenced (left in place) (0)\n");
 });
 
-test("does not prune when the source has a reference it cannot read", async (t) => {
+test("does not claim to know which files are unused when it cannot read every reference", async (t) => {
   const root = await makeProject(t, {
     "src/a.ts": `export default { base: "${PREFIX}" };\nconst hero = "/hero.webp";`,
     "public/ploy-assets/hero.webp": "committed copy",
@@ -58,7 +62,7 @@ test("does not prune when the source has a reference it cannot read", async (t) 
   assert.equal(run.status, 1);
   assert.equal(
     run.stdout,
-    "added (0)\nremoved (skipped: the sync could not read every reference, so nothing was deleted)\nkept (0)\n",
+    "added (0)\nkept (0)\nnot referenced: unknown, because the sync could not read every reference\n",
   );
   assert.deepEqual(await readdir(join(root, "public", "ploy-assets")), ["hero.webp"]);
 });
@@ -73,8 +77,28 @@ test("keeps committed copies when a prefix constant is used where the sync canno
   });
   const run = runBin("mirror-sync-assets", root);
   assert.equal(run.status, 1);
-  assert.match(run.stdout, /removed \(skipped: /);
+  assert.match(run.stdout, /not referenced: unknown/);
   assert.match(run.stderr, /prefix constant STORAGE in src\/config\.ts is exported/);
   assert.match(run.stderr, /prefix constant B in src\/Logo\.ts has a use on line 2/);
   assert.deepEqual((await readdir(join(root, "public", "ploy-assets"))).sort(), ["hero.webp", "logo.webp"]);
 });
+
+// Trailing-slash forms from a review: each must be a problem (exit 1) and must
+// leave the committed copy in place.
+const trailingSlashCases = {
+  "const plus template": { "src/a.ts": `const S = "${PREFIX}/";\nconst h = \`\${S}hero.webp\`;` },
+  "const plus +": { "src/a.ts": `const S = "${PREFIX}/";\nconst h = S + "hero.webp";` },
+  "literal plus +": { "src/a.ts": `const h = "${PREFIX}/" + "hero.webp";` },
+  "new URL": { "src/a.ts": `const h = new URL("hero.webp", "${PREFIX}/").href;` },
+  object: { "src/cfg.ts": `export default { base: "${PREFIX}/" };` },
+  JSON: { "src/cfg.json": `{ "base": "${PREFIX}/", "hero": "hero.webp" }` },
+};
+for (const [name, files] of Object.entries(trailingSlashCases)) {
+  test(`a prefix with a trailing slash and no filename is a problem: ${name}`, async (t) => {
+    const root = await makeProject(t, { ...files, "public/ploy-assets/hero.webp": "in use" });
+    const run = runBin("mirror-sync-assets", root);
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /bucket prefix followed by "\/" with no literal filename in src\/[a-z]+\.(ts|json) on line 1/);
+    assert.deepEqual(await readdir(join(root, "public", "ploy-assets")), ["hero.webp"]);
+  });
+}

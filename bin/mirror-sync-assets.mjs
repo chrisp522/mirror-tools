@@ -2,40 +2,46 @@
 // @ts-check
 /**
  * Download every Ploy storage-bucket file the site references into
- * public/ploy-assets/, and delete files there that nothing references any more.
- * When it cannot read every reference, it still downloads what it can but
- * deletes nothing, because a file it could not see a reference to may be in use.
- * Run it from the mirror's root folder. How references are found:
- * src/sync/collect.mjs.
+ * public/ploy-assets/. Never deletes anything. Run it from the mirror's root
+ * folder. How references are found: src/sync/collect.mjs.
+ *
+ * It also lists files in public/ploy-assets/ that no reference it read points
+ * at, and leaves them in place; `mirror-prune-assets` is the separate, explicit
+ * step that deletes them. When it could not read every reference, it says it
+ * cannot tell which files are unused instead of listing them.
  *
  * Exits non-zero if a download fails or the source has a reference it cannot
- * resolve (two addresses sharing a filename, an unsafe filename, or a prefix
- * that is not a simple constant).
+ * read or resolve (the README lists each case).
  */
 
-import { applySync } from "../src/sync/apply.mjs";
 import { collectReferences } from "../src/sync/collect.mjs";
+import { downloadMissing } from "../src/sync/download.mjs";
+import { findUnreferenced } from "../src/sync/unreferenced.mjs";
 
 const root = process.cwd();
-const { wanted, problems: collectProblems } = await collectReferences(root);
-const { added, kept, prune, problems: applyProblems } = await applySync(root, wanted, {
-  prune: collectProblems.length === 0,
-});
-const problems = [...collectProblems, ...applyProblems];
+const collection = await collectReferences(root);
+const download = await downloadMissing(root, collection.wanted);
+const unreferenced = await findUnreferenced(root, collection);
+const problems = [...collection.problems, ...download.problems];
 
 /** @param {string} label @param {string[]} items */
 const list = (label, items) =>
   console.log(`${label} (${items.length})${items.map((item) => `\n  ${item}`).join("")}`);
-list("added", added);
-switch (prune.status) {
-  case "done":
-    list("removed", prune.removed);
+list("added", download.added);
+list("kept", download.kept);
+switch (unreferenced.status) {
+  case "known":
+    list("not referenced (left in place)", unreferenced.files);
+    if (unreferenced.files.length > 0) {
+      console.log("To review and delete them: node node_modules/mirror-tools/bin/mirror-prune-assets.mjs");
+    }
     break;
-  case "skipped":
-    console.log("removed (skipped: the sync could not read every reference, so nothing was deleted)");
+  case "unknown":
+    console.log("not referenced: unknown, because the sync could not read every reference");
     break;
+  default:
+    throw new Error(`unknown unreferenced status: ${JSON.stringify(unreferenced)}`);
 }
-list("kept", kept);
 
 if (problems.length > 0) {
   console.error(`\nmirror-sync-assets failed:\n${problems.map((p) => `  - ${p}`).join("\n")}`);

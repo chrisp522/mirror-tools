@@ -15,6 +15,7 @@
   },
   "bin": {
     "mirror-sync-assets": "./bin/mirror-sync-assets.mjs",
+    "mirror-prune-assets": "./bin/mirror-prune-assets.mjs",
     "mirror-check-assets": "./bin/mirror-check-assets.mjs"
   },
   "files": [

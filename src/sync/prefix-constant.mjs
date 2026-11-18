@@ -13,13 +13,16 @@
  * `${NAME}/${name}`) is a reference it has not read. A false problem stops the
  * prune and fails the run loudly; a missed reference would delete a file in use.
  */
+import { lineAt } from "../files.mjs";
 import { readLiteralFilename } from "./literal-filename.mjs";
 
 /**
  * @typedef {{ kind: "not-a-constant" }
- *   | { kind: "constant"; name: string; filenames: string[]; reason: string | null }} PrefixConstant
- *   filenames: literal filenames (as written) from the readable uses.
- *   reason: why the sync cannot vouch for every use, or null.
+ *   | { kind: "readable"; name: string; filenames: string[] }
+ *   | { kind: "unreadable"; name: string; filenames: string[]; reason: string }} PrefixConstant
+ *   readable: every use was read; filenames (as written) holds at least one.
+ *   unreadable: reason says why the sync cannot vouch for every use; filenames
+ *   holds the uses it could read.
  */
 
 /** @param {string} text */
@@ -27,10 +30,6 @@ function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** @param {string} text @param {number} index */
-function lineAt(text, index) {
-  return text.slice(0, index).split("\n").length;
-}
 
 /**
  * @param {string} text the whole file
@@ -59,12 +58,13 @@ export function readPrefixConstant(text, prefixIndex) {
     else firstUnreadable ??= match.index;
   }
 
-  /** @type {string | null} */
-  let reason = null;
-  if (declared[1]) reason = "is exported, so it may be used in files the sync does not follow";
-  else if (firstUnreadable !== null) {
-    reason = `has a use on line ${lineAt(text, firstUnreadable)} that is not \`\${${name}}/<filename>\``;
-  } else if (filenames.length === 0) reason = "has no use the sync can read";
-
-  return { kind: "constant", name, filenames, reason };
+  if (declared[1]) {
+    return { kind: "unreadable", name, filenames, reason: "is exported, so it may be used in files the sync does not follow" };
+  }
+  if (firstUnreadable !== null) {
+    const reason = `has a use on line ${lineAt(text, firstUnreadable)} that is not \`\${${name}}/<filename>\``;
+    return { kind: "unreadable", name, filenames, reason };
+  }
+  if (filenames.length === 0) return { kind: "unreadable", name, filenames, reason: "has no use the sync can read" };
+  return { kind: "readable", name, filenames };
 }

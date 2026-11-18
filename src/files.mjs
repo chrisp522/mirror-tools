@@ -29,6 +29,15 @@ export function projectPath(root, file) {
 }
 
 /**
+ * The 1-based line number of a position in a text, for messages.
+ * @param {string} text
+ * @param {number} index
+ */
+export function lineAt(text, index) {
+  return text.slice(0, index).split("\n").length;
+}
+
+/**
  * A file's contents as UTF-8 text, or null when it looks binary (a zero byte
  * in its first 8000 bytes).
  * @param {string} file

@@ -236,3 +236,23 @@ test("a full address's filename stops at a query, fragment, comma or space", asy
   assert.deepEqual(problems, []);
   assert.deepEqual([...wanted.keys()].sort(), ["a.webp", "b.webp", "c.webp", "d.webp"]);
 });
+
+test("a prefix followed by / and no literal filename is a problem naming the file and line", async (t) => {
+  const root = await makeProject(t, { "src/a.ts": `// base\nconst S = "${PREFIX}/";\nconst h = \`\${S}hero.webp\`;` });
+  const { wanted, problems } = await collectReferences(root);
+  assert.equal(wanted.size, 0);
+  assert.deepEqual(problems, [
+    'bucket prefix followed by "/" with no literal filename in src/a.ts on line 2. The sync reads a full address with a literal filename, or a prefix constant used as `${NAME}/<filename>`; see "What the sync can read" in the mirror-tools README',
+  ]);
+});
+
+test("two wanted names that differ only in case are a collision", async (t) => {
+  const root = await makeProject(t, {
+    "src/a.astro": `"${PREFIX}/hero.webp"`,
+    "src/b.astro": `"${PREFIX}/Hero.webp"`,
+  });
+  const { problems } = await collectReferences(root);
+  assert.deepEqual(problems, [
+    `two addresses map to ploy-assets/hero.webp and ploy-assets/Hero.webp, which are one file on a case-insensitive disk:\n    ${PREFIX}/hero.webp (src/a.astro)\n    ${PREFIX}/Hero.webp (src/b.astro)`,
+  ]);
+});

@@ -39,10 +39,10 @@ export function reportCheck(result, out) {
       return 1;
 
     default:
-      // A status this file does not know must never let a deploy through.
-      out.error(
+      // A status this file does not know must never let a deploy through: the
+      // throw ends the bin with a non-zero exit.
+      throw new Error(
         `mirror-check-assets: unknown check result "${/** @type {{ status: unknown }} */ (result).status}". Failing the build.`,
       );
-      return 1;
   }
 }

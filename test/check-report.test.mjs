@@ -35,9 +35,11 @@ test("failed returns 1", () => {
   assert.equal(error[0], "mirror-check-assets: FAILED");
 });
 
-test("an unknown status fails closed", () => {
+test("an unknown status throws, so the bin exits non-zero", () => {
   const { out, log, error } = capture();
-  assert.equal(reportCheck(/** @type {any} */ ({ status: "surprise" }), out), 1);
+  assert.throws(() => reportCheck(/** @type {any} */ ({ status: "surprise" }), out), {
+    message: 'mirror-check-assets: unknown check result "surprise". Failing the build.',
+  });
   assert.deepEqual(log, []);
-  assert.deepEqual(error, ['mirror-check-assets: unknown check result "surprise". Failing the build.']);
+  assert.deepEqual(error, []);
 });

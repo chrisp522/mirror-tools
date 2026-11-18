@@ -31,8 +31,9 @@ export async function makeProject(t, files) {
  * Run one of the package's bins with the given working directory.
  * @param {string} name bin file name without extension
  * @param {string} cwd
+ * @param {string[]} [args]
  */
-export function runBin(name, cwd) {
+export function runBin(name, cwd, args = []) {
   const bin = fileURLToPath(new URL(`../bin/${name}.mjs`, import.meta.url));
-  return spawnSync(process.execPath, [bin], { cwd, encoding: "utf8" });
+  return spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
 }
