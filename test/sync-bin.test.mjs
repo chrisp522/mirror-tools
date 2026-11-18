@@ -102,3 +102,18 @@ for (const [name, files] of Object.entries(trailingSlashCases)) {
     assert.deepEqual(await readdir(join(root, "public", "ploy-assets")), ["hero.webp"]);
   });
 }
+
+test("does not list unreferenced files when a referenced file is missing after its run", async (t) => {
+  const root = await makeProject(t, {
+    "src/a.astro": `<img src="${PREFIX}/Hero.webp">`,
+    "public/ploy-assets/hero.webp": "h",
+    "public/ploy-assets/old.webp": "o",
+  });
+  const run = runBin("mirror-sync-assets", root);
+  assert.equal(run.status, 1);
+  assert.equal(
+    run.stdout,
+    "added (0)\nkept (0)\nnot referenced: unknown, because these referenced files are not in public/ploy-assets/:\n  Hero.webp (on disk as hero.webp)\n",
+  );
+  assert.deepEqual((await readdir(join(root, "public", "ploy-assets"))).sort(), ["hero.webp", "old.webp"]);
+});

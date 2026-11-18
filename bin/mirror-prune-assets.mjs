@@ -8,7 +8,8 @@
  *   mirror-prune-assets --delete  delete exactly that list
  *
  * Refuses (exit 1, nothing deleted) when the source has a reference the sync
- * could not read, because then it cannot tell which files are unused. Dotfiles
+ * could not read, or when a referenced file is not on disk under its exact
+ * name, because then it cannot tell which files are unused. Dotfiles
  * are never deleted. The list comes from the same collection the sync uses.
  */
 
@@ -41,11 +42,22 @@ if (request.mode === "usage-error") {
 const root = process.cwd();
 const unreferenced = await findUnreferenced(root, await collectReferences(root));
 
+const RUN_SYNC_FIRST = "Run node node_modules/mirror-tools/bin/mirror-sync-assets.mjs and fix what it reports first.";
+
 switch (unreferenced.status) {
-  case "unknown":
+  case "unreadable":
     console.error(
       "mirror-prune-assets: refusing. The source has references the sync could not read, so it cannot tell which files are unused. Nothing was deleted.\n" +
         unreferenced.problems.map((p) => `  - ${p}`).join("\n"),
+    );
+    process.exitCode = 1;
+    break;
+
+  case "missing":
+    console.error(
+      "mirror-prune-assets: refusing. These referenced files are not in public/ploy-assets/, so the last sync did not finish or read a name wrong, and the list of unused files cannot be trusted. Nothing was deleted.\n" +
+        unreferenced.missing.map((m) => `  - ${m}`).join("\n") +
+        `\n${RUN_SYNC_FIRST}`,
     );
     process.exitCode = 1;
     break;

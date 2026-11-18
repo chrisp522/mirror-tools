@@ -7,8 +7,10 @@
  *
  * It also lists files in public/ploy-assets/ that no reference it read points
  * at, and leaves them in place; `mirror-prune-assets` is the separate, explicit
- * step that deletes them. When it could not read every reference, it says it
- * cannot tell which files are unused instead of listing them.
+ * step that deletes them. When it could not read every reference, or a
+ * referenced file is still not on disk after its run, it says it cannot tell
+ * which files are unused instead of listing them (the same cases in which the
+ * prune refuses).
  *
  * Exits non-zero if a download fails or the source has a reference it cannot
  * read or resolve (the README lists each case).
@@ -36,8 +38,13 @@ switch (unreferenced.status) {
       console.log("To review and delete them: node node_modules/mirror-tools/bin/mirror-prune-assets.mjs");
     }
     break;
-  case "unknown":
+  case "unreadable":
     console.log("not referenced: unknown, because the sync could not read every reference");
+    break;
+  case "missing":
+    console.log(
+      `not referenced: unknown, because these referenced files are not in public/ploy-assets/:${unreferenced.missing.map((m) => `\n  ${m}`).join("")}`,
+    );
     break;
   default:
     throw new Error(`unknown unreferenced status: ${JSON.stringify(unreferenced)}`);

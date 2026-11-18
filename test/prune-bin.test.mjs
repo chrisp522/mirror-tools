@@ -74,3 +74,45 @@ test("any other argument is an error with usage", async (t) => {
   }
   assert.deepEqual(await assetsOf(root), [".gitkeep", "old.webp", "older.webp", "used.webp"]);
 });
+
+const MISSING_REFUSAL =
+  "mirror-prune-assets: refusing. These referenced files are not in public/ploy-assets/, so the last sync did not finish or read a name wrong, and the list of unused files cannot be trusted. Nothing was deleted.\n";
+const RUN_SYNC_FIRST = "Run node node_modules/mirror-tools/bin/mirror-sync-assets.mjs and fix what it reports first.\n";
+
+test("refuses, in both modes, when a filename is cut short (it's.webp read as it)", async (t) => {
+  const root = await makeProject(t, {
+    "src/a.html": `<img src="${PREFIX}/it's.webp">`,
+    "public/ploy-assets/it's.webp": "in use",
+  });
+  for (const args of [[], ["--delete"]]) {
+    const run = runBin("mirror-prune-assets", root, args);
+    assert.equal(run.status, 1, args.join(" "));
+    assert.equal(run.stdout, "");
+    assert.equal(run.stderr, `${MISSING_REFUSAL}  - it\n${RUN_SYNC_FIRST}`);
+    assert.deepEqual(await assetsOf(root), ["it's.webp"]);
+  }
+});
+
+test("refuses when a wanted file is simply not on disk", async (t) => {
+  const root = await makeProject(t, {
+    "src/a.astro": `<img src="${PREFIX}/used.webp"><img src="${PREFIX}/new.webp">`,
+    "public/ploy-assets/used.webp": "u",
+    "public/ploy-assets/old.webp": "o",
+  });
+  const run = runBin("mirror-prune-assets", root, ["--delete"]);
+  assert.equal(run.status, 1);
+  assert.equal(run.stderr, `${MISSING_REFUSAL}  - new.webp\n${RUN_SYNC_FIRST}`);
+  assert.deepEqual(await assetsOf(root), ["old.webp", "used.webp"]);
+});
+
+test("refuses when a wanted file is on disk only in another case", async (t) => {
+  const root = await makeProject(t, {
+    "src/a.astro": `<img src="${PREFIX}/Hero.webp">`,
+    "public/ploy-assets/hero.webp": "h",
+    "public/ploy-assets/old.webp": "o",
+  });
+  const run = runBin("mirror-prune-assets", root, ["--delete"]);
+  assert.equal(run.status, 1);
+  assert.equal(run.stderr, `${MISSING_REFUSAL}  - Hero.webp (on disk as hero.webp)\n${RUN_SYNC_FIRST}`);
+  assert.deepEqual(await assetsOf(root), ["hero.webp", "old.webp"]);
+});
