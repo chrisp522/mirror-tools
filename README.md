@@ -56,6 +56,7 @@ A file already in `public/ploy-assets/` is never downloaded again. Bucket filena
 - `kept`: referenced files that were already there.
 - `not referenced (left in place)`: files in `public/ploy-assets/` that no reference it read points at, apart from dotfiles. They stay where they are. When the list is not empty, the sync names the prune command on the next line.
 - When the sync had a problem reading the source, it prints `not referenced: unknown` instead of that list, because a file with no readable reference may still be in use.
+- When a referenced file is still not in `public/ploy-assets/` after the sync's run (its download failed, or it is there only in another case), it also prints `not referenced: unknown`, followed by those files. These are the same cases in which the prune refuses.
 
 The sync exits with an error, after downloading what it can, when:
 
@@ -81,6 +82,7 @@ node node_modules/mirror-tools/bin/mirror-prune-assets.mjs --delete  # deletes e
 - Without a flag it prints `would delete (n)` and the files, and deletes nothing.
 - With `--delete` it deletes exactly the files it would list and prints `deleted (n)`.
 - It refuses, exits 1 and deletes nothing when the source has any problem the sync reports while reading references. Fix those first.
+- It also refuses, exits 1 and deletes nothing when a referenced file is not in `public/ploy-assets/` under its exact name. It prints those files, each with the name on disk when it is there only in another case. A missing file means the last sync did not finish, or the reader cut a name short, so the list of unused files cannot be trusted. Run the sync and fix what it reports first.
 - It never deletes a file whose name starts with a dot (`.gitkeep`, `.DS_Store`), or one that a reference matches ignoring case.
 - It takes no other argument, and never asks a question, so it also runs in a script.
 
@@ -91,7 +93,7 @@ Read the dry-run list before you run `--delete`. The list is only as good as the
 Add it to the mirror's `package.json` as a git dependency, pinned to a tag:
 
 ```json
-"mirror-tools": "github:chrisp522/mirror-tools#v1.0.4"
+"mirror-tools": "github:chrisp522/mirror-tools#v1.0.5"
 ```
 
 Then install with the mirror's package manager. Node 20 or later. The package has no dependencies of its own.
@@ -193,14 +195,14 @@ If the sync itself fails, its last lines list each problem.
 
 ## Limits
 
-The sync and the prune read source files as text. They do not run or parse the code. These forms are not read, so a file referenced only this way is not downloaded by the sync and appears on the prune's list:
+The sync and the prune read source files as text. They do not run or parse the code. These forms are not read, so a file referenced only this way is not downloaded by the sync and can appear on the prune's list:
 
 - a bucket address in a file outside `src/` and `public/` (for example a root `lib/` folder);
 - a prefix assembled from pieces, so the full `https://storage.googleapis.com/ployai/<uuid>/user` never appears as written;
 - a constant set in a classic inline `<script>` and read as a global from another file;
 - a comment between `export` and `const` (`export /* note */ const S = ...`), which hides that the constant is exported;
 - a constant used through spread (`...S`) or written with a unicode escape (`\u0053`);
-- a filename that really contains `(`, `)`, `,` or `'`, which is cut short at that character (the sync then tries to download the shortened name, and that download fails);
+- a filename that really contains `(`, `)`, `,` or `'`, which is cut short at that character. The sync then tries to download the shortened name (`it's.webp` becomes `it`). When the bucket has no file by that name, the download fails, and the prune refuses while `it` is missing from disk. When the bucket does have a file by that name, the sync saves that other file, and the prune's list can then include the real one;
 - a file with a zero byte in its first 8000 bytes, which is treated as binary and skipped;
 - a symbolic link, which is skipped.
 
@@ -208,7 +210,7 @@ What protects you:
 
 - The check after the build fails on any bucket address left in the output and on any plain-text `/ploy-assets/<file>` reference to a file that was not shipped. It does not see a reference that the build output writes in another form.
 - The preview build of each pull request. Look at it.
-- The sync never deletes. The prune is a separate, manual step: run it only when the sync ran clean, and read its dry-run list before `--delete`.
+- The sync never deletes. The prune is a separate, manual step: run it only when the sync ran clean, and read its dry-run list before `--delete`. It refuses on its own when the sync could not read the source or a referenced file is missing from disk.
 
 ## Develop
 
