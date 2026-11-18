@@ -122,3 +122,16 @@ test("with prune off, downloads what it can and deletes nothing", async (t) => {
   });
   assert.deepEqual((await readdir(join(root, "public", "ploy-assets"))).sort(), ["kept.webp", "new.webp", "unreferenced.webp"]);
 });
+
+test("a wanted file whose name starts with a dot is kept once present, and a stray dotfile is never pruned", async (t) => {
+  const root = await makeProject(t, {
+    "public/ploy-assets/.hidden.webp": "already here",
+    "public/ploy-assets/.gitkeep": "",
+    "public/ploy-assets/.DS_Store": "x",
+  });
+  const { fetch, calls } = fakeFetch({});
+  const result = await applySync(root, wantedOf([".hidden.webp"]), { fetch, prune: true });
+  assert.deepEqual(calls, []);
+  assert.deepEqual(result, { added: [], kept: [".hidden.webp"], prune: { status: "done", removed: [] }, problems: [] });
+  assert.deepEqual((await readdir(join(root, "public", "ploy-assets"))).sort(), [".DS_Store", ".gitkeep", ".hidden.webp"]);
+});

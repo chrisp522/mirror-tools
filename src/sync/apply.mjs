@@ -26,7 +26,7 @@ export async function applySync(root, wanted, { prune, fetch = globalThis.fetch 
   await mkdir(assetDir, { recursive: true });
   const present = new Set(
     (await readdir(assetDir, { withFileTypes: true }))
-      .filter((entry) => entry.isFile() && !entry.name.startsWith("."))
+      .filter((entry) => entry.isFile())
       .map((entry) => entry.name),
   );
 
@@ -60,7 +60,8 @@ export async function applySync(root, wanted, { prune, fetch = globalThis.fetch 
   /** @type {string[]} */
   const removed = [];
   for (const filename of [...present].sort()) {
-    if (wanted.has(filename)) continue;
+    // A dotfile nothing references (.gitkeep, .DS_Store) is not ours to delete.
+    if (wanted.has(filename) || filename.startsWith(".")) continue;
     await rm(join(assetDir, filename));
     removed.push(filename);
   }
