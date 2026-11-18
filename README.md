@@ -35,27 +35,35 @@ The sync finds a bucket file in `src/` and `public/` (skipping `public/ploy-asse
   ```js
   const STORAGE = "https://storage.googleapis.com/ployai/<uuid>/user";
   const hero = `${STORAGE}/hero.webp`;
+  const wall = `${STORAGE}/wall.webp`;
   ```
+
+  The constant must be declared with `const`, `let` or `var`, must not be exported, and every other mention of it in that file must be `${STORAGE}/<filename>` with a literal filename. The sync has then seen every file the constant can point to. An exported constant, `STORAGE + "/hero.webp"`, or `${STORAGE}/${name}` is a use it cannot read.
+
+A filename ends at whitespace, a quote, `(`, `)`, `<`, `>`, a backslash, `?`, `#`, a comma or `&`. An HTML-escaped quote such as `&quot;` ends it too, so `hero.webp&quot;` reads as `hero.webp`. Any other `&` right after a filename stops the sync with an error (see below).
 
 The local filename is the filename from the address with percent sequences decoded, so `my%20image.webp` is saved as `my image.webp`. A name that cannot be decoded, such as `100%.webp`, is saved as written. Either way the download uses the address exactly as the source writes it.
 
-A file already in `public/ploy-assets/` is never downloaded again. Bucket filenames carry a hash or timestamp, so one name is treated as one fixed file. Files whose names start with a dot (such as `.gitkeep`) are never downloaded over or deleted.
+A file already in `public/ploy-assets/` is never downloaded again. Bucket filenames carry a hash or timestamp, so one name is treated as one fixed file. A file there whose name starts with a dot (such as `.gitkeep` or `.DS_Store`) is never deleted, even when nothing references it.
 
 The sync exits with an error, after doing what it can, when:
 
 - a download fails;
 - two different addresses would save to the same filename;
 - a filename, once decoded, contains a slash (`/` or `\`) or is `.` or `..`;
-- the source holds a bucket prefix that is not a simple `const`, `let` or `var` string (for example a prefix inside an object). The sync cannot tell which files go with it.
+- a filename is built from a template expression (`.../user/hero-${size}.webp`);
+- a filename contains an `&` that is not an HTML-escaped quote (`.../user/salt&pepper.webp`);
+- the source holds a bucket prefix that is not a simple `const`, `let` or `var` string (for example a prefix inside an object). The sync cannot tell which files go with it;
+- a prefix constant breaks the rule above: it is exported, it has a use in another form, or it has no use the sync can read. The message names the constant, the file and, for a use in another form, its line.
 
-When any of the last three happens, the sync could not read every reference. It still downloads what it can, but it deletes nothing, because a file it saw no reference to may still be in use. Its output then reads `removed (skipped: ...)`.
+In every case except a failed download, the sync could not read every reference cleanly. It still downloads what it can, but it deletes nothing, because a file it saw no reference to may still be in use. Its output then reads `removed (skipped: ...)`.
 
 ## Install
 
 Add it to the mirror's `package.json` as a git dependency, pinned to a tag:
 
 ```json
-"mirror-tools": "github:chrisp522/mirror-tools#v1.0.2"
+"mirror-tools": "github:chrisp522/mirror-tools#v1.0.3"
 ```
 
 Then install with the mirror's package manager. Node 20 or later. The package has no dependencies of its own.
@@ -138,6 +146,8 @@ Ploy commits to its own repo. The mirror has Ploy's repo as a remote named `ploy
 7. Push the branch and open a pull request. The host builds a preview, and the check runs as part of that build.
 
 ## When the check fails
+
+The check reads plain `/ploy-assets/<file>` references only. A URL-encoded one, such as `/_vercel/image?url=%2Fploy-assets%2Fhero.webp`, is not checked.
 
 The build log starts with `mirror-check-assets: FAILED` and lists one or both of:
 
