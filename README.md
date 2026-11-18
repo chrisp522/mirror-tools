@@ -10,13 +10,14 @@ https://storage.googleapis.com/ployai/<uuid>/user/<filename>
 
 The mirror keeps its own copies of those files in `public/ploy-assets/` and serves them from its own domain. Ploy owns the source and keeps editing it, so the mirror never edits Ploy's files. Instead these tools download the copies and rewrite the addresses while the site builds.
 
-## The three pieces
+## The four pieces
 
-- **The sync** (`mirror-sync-assets`): reads the source, downloads every referenced bucket file into `public/ploy-assets/`, and deletes files there that nothing references any more. You run it by hand and commit the result.
+- **The sync** (`mirror-sync-assets`): reads the source and downloads every referenced bucket file that `public/ploy-assets/` does not have yet. It never deletes anything. You run it by hand and commit the result.
+- **The prune** (`mirror-prune-assets`): a separate command you run by hand. It lists the files in `public/ploy-assets/` that no reference points at, and deletes them only when you add `--delete`.
 - **The Vite plugin** (`localPloyAssets` from `mirror-tools/vite`): while Astro builds, replaces each bucket prefix with `/ploy-assets`. The source files on disk stay as Ploy wrote them. Code under `node_modules` is left alone.
 - **The check** (`mirror-check-assets`): runs after the build. It fails the build if the output still contains a bucket address, or references a `/ploy-assets/` file the build did not ship.
 
-All three read the address pattern from one internal module, `src/pattern.mjs`. It is not exported.
+All four read the address pattern from one internal module, `src/pattern.mjs`. It is not exported. The sync and the prune read references the same way, from one shared module.
 
 ### One address, start to finish
 
@@ -24,10 +25,11 @@ All three read the address pattern from one internal module, `src/pattern.mjs`. 
 2. **Sync.** `mirror-sync-assets` finds that address, downloads it, and saves it as `public/ploy-assets/hero.webp`. You commit that file.
 3. **Build.** The Vite plugin turns the address into `/ploy-assets/hero.webp`. Astro copies `public/` into the output, so the file ships at that path.
 4. **Check.** `mirror-check-assets` reads `.vercel/output`. It finds no bucket address and finds `hero.webp` in `.vercel/output/static/ploy-assets/`, so it prints `ok` and the deploy goes ahead.
+5. **Later, if Ploy drops the image.** The next sync lists `hero.webp` under `not referenced (left in place)` and keeps it. It goes away only when you run the prune with `--delete`.
 
 ### What the sync can read
 
-The sync finds a bucket file in `src/` and `public/` (skipping `public/ploy-assets/`) when the source writes it one of two ways:
+The sync reads the files in `src/` and `public/` (skipping `public/ploy-assets/`) as text. It finds a bucket file when the source writes it one of two ways:
 
 - A full address: `https://storage.googleapis.com/ployai/<uuid>/user/<filename>`.
 - A prefix held in a constant, then joined in a template literal:
@@ -40,30 +42,56 @@ The sync finds a bucket file in `src/` and `public/` (skipping `public/ploy-asse
 
   The constant must be declared with `const`, `let` or `var`, must not be exported, and every other mention of it in that file must be `${STORAGE}/<filename>` with a literal filename. The sync has then seen every file the constant can point to. An exported constant, `STORAGE + "/hero.webp"`, or `${STORAGE}/${name}` is a use it cannot read.
 
-A filename ends at whitespace, a quote, `(`, `)`, `<`, `>`, a backslash, `?`, `#`, a comma or `&`. An HTML-escaped quote such as `&quot;` ends it too, so `hero.webp&quot;` reads as `hero.webp`. Any other `&` right after a filename stops the sync with an error (see below).
+Every place the source writes the bucket prefix ends as either a file to download or a problem. A prefix with a slash after it and no literal filename (`const S = ".../user/"`, `".../user/" + "hero.webp"`, `new URL("hero.webp", ".../user/")`) is a problem, not something the sync skips.
+
+A filename ends at whitespace, a quote, `(`, `)`, `<`, `>`, a backslash, `?`, `#`, a comma or `&`. An HTML-escaped quote such as `&quot;` ends it too, so `hero.webp&quot;` reads as `hero.webp`. Any other `&` right after a filename is a problem (see below).
 
 The local filename is the filename from the address with percent sequences decoded, so `my%20image.webp` is saved as `my image.webp`. A name that cannot be decoded, such as `100%.webp`, is saved as written. Either way the download uses the address exactly as the source writes it.
 
-A file already in `public/ploy-assets/` is never downloaded again. Bucket filenames carry a hash or timestamp, so one name is treated as one fixed file. A file there whose name starts with a dot (such as `.gitkeep` or `.DS_Store`) is never deleted, even when nothing references it.
+A file already in `public/ploy-assets/` is never downloaded again. Bucket filenames carry a hash or timestamp, so one name is treated as one fixed file. A file there whose name differs from a referenced one only in case (`hero.webp` on disk, `Hero.webp` referenced) is a problem, and nothing is downloaded over it.
 
-The sync exits with an error, after doing what it can, when:
+### What the sync prints
+
+- `added`: files it downloaded.
+- `kept`: referenced files that were already there.
+- `not referenced (left in place)`: files in `public/ploy-assets/` that no reference it read points at, apart from dotfiles. They stay where they are. When the list is not empty, the sync names the prune command on the next line.
+- When the sync had a problem reading the source, it prints `not referenced: unknown` instead of that list, because a file with no readable reference may still be in use.
+
+The sync exits with an error, after downloading what it can, when:
 
 - a download fails;
-- two different addresses would save to the same filename;
+- two different addresses would save to the same filename, or to names that differ only in case;
+- a referenced filename is on disk only in another case;
 - a filename, once decoded, contains a slash (`/` or `\`) or is `.` or `..`;
+- the bucket prefix is followed by a slash and no literal filename;
 - a filename is built from a template expression (`.../user/hero-${size}.webp`);
 - a filename contains an `&` that is not an HTML-escaped quote (`.../user/salt&pepper.webp`);
-- the source holds a bucket prefix that is not a simple `const`, `let` or `var` string (for example a prefix inside an object). The sync cannot tell which files go with it;
-- a prefix constant breaks the rule above: it is exported, it has a use in another form, or it has no use the sync can read. The message names the constant, the file and, for a use in another form, its line.
+- the source holds a bucket prefix that is not a simple `const`, `let` or `var` string (for example a prefix inside an object);
+- a prefix constant breaks the rule above: it is exported, it has a use in another form, or it has no use the sync can read.
 
-In every case except a failed download, the sync could not read every reference cleanly. It still downloads what it can, but it deletes nothing, because a file it saw no reference to may still be in use. Its output then reads `removed (skipped: ...)`.
+Each message says what it is about: the source file (with the line, for a prefix with no filename or a constant use in another form), the address, or the names on disk.
+
+### The prune
+
+```
+node node_modules/mirror-tools/bin/mirror-prune-assets.mjs           # dry run: lists, deletes nothing
+node node_modules/mirror-tools/bin/mirror-prune-assets.mjs --delete  # deletes exactly that list
+```
+
+- Without a flag it prints `would delete (n)` and the files, and deletes nothing.
+- With `--delete` it deletes exactly the files it would list and prints `deleted (n)`.
+- It refuses, exits 1 and deletes nothing when the source has any problem the sync reports while reading references. Fix those first.
+- It never deletes a file whose name starts with a dot (`.gitkeep`, `.DS_Store`), or one that a reference matches ignoring case.
+- It takes no other argument, and never asks a question, so it also runs in a script.
+
+Read the dry-run list before you run `--delete`. The list is only as good as the sync's reading of the source (see "Limits").
 
 ## Install
 
 Add it to the mirror's `package.json` as a git dependency, pinned to a tag:
 
 ```json
-"mirror-tools": "github:chrisp522/mirror-tools#v1.0.3"
+"mirror-tools": "github:chrisp522/mirror-tools#v1.0.4"
 ```
 
 Then install with the mirror's package manager. Node 20 or later. The package has no dependencies of its own.
@@ -141,9 +169,10 @@ Ploy commits to its own repo. The mirror has Ploy's repo as a remote named `ploy
 2. `git switch -c <branch> origin/main`
 3. `git merge ploy/main`
 4. `bun install` (a fresh clone has no `node_modules/mirror-tools` until this runs, and Ploy's edits may change dependencies)
-5. `node node_modules/mirror-tools/bin/mirror-sync-assets.mjs` (downloads new files, deletes unused ones)
-6. Commit, including every change under `public/ploy-assets/`.
-7. Push the branch and open a pull request. The host builds a preview, and the check runs as part of that build.
+5. `node node_modules/mirror-tools/bin/mirror-sync-assets.mjs` (downloads new files; deletes nothing)
+6. Optional, only when step 5 ran clean: `node node_modules/mirror-tools/bin/mirror-prune-assets.mjs`, read the list, then run it again with `--delete` if every file on it is really unused.
+7. Commit, including every change under `public/ploy-assets/`.
+8. Push the branch and open a pull request. The host builds a preview, and the check runs as part of that build. Look at the preview too.
 
 ## When the check fails
 
@@ -158,9 +187,28 @@ For either one:
 
 1. Run `node node_modules/mirror-tools/bin/mirror-sync-assets.mjs` and read its output.
 2. If it added files, commit `public/ploy-assets/`, push, and let the build run again.
-3. If it added nothing and the check still fails, the source builds that address in a way the sync cannot read (see "What the sync can read"). Adding the file to `public/ploy-assets/` by hand does not last: any later sync that reads every reference deletes the files it saw no reference to. The lasting fixes are to have the source changed in Ploy to one of the two forms, or to teach the sync the new form in this package.
+3. If it added nothing and the check still fails, the source builds that address in a way the sync cannot read (see "What the sync can read" and "Limits"). You can download the file into `public/ploy-assets/` by hand and commit it; the sync never deletes it. The prune will list it as not referenced, so leave it off any `--delete` run. The lasting fixes are to have the source changed in Ploy to one of the two readable forms, or to teach the sync the new form in this package.
 
 If the sync itself fails, its last lines list each problem.
+
+## Limits
+
+The sync and the prune read source files as text. They do not run or parse the code. These forms are not read, so a file referenced only this way is not downloaded by the sync and appears on the prune's list:
+
+- a bucket address in a file outside `src/` and `public/` (for example a root `lib/` folder);
+- a prefix assembled from pieces, so the full `https://storage.googleapis.com/ployai/<uuid>/user` never appears as written;
+- a constant set in a classic inline `<script>` and read as a global from another file;
+- a comment between `export` and `const` (`export /* note */ const S = ...`), which hides that the constant is exported;
+- a constant used through spread (`...S`) or written with a unicode escape (`\u0053`);
+- a filename that really contains `(`, `)`, `,` or `'`, which is cut short at that character (the sync then tries to download the shortened name, and that download fails);
+- a file with a zero byte in its first 8000 bytes, which is treated as binary and skipped;
+- a symbolic link, which is skipped.
+
+What protects you:
+
+- The check after the build fails on any bucket address left in the output and on any plain-text `/ploy-assets/<file>` reference to a file that was not shipped. It does not see a reference that the build output writes in another form.
+- The preview build of each pull request. Look at it.
+- The sync never deletes. The prune is a separate, manual step: run it only when the sync ran clean, and read its dry-run list before `--delete`.
 
 ## Develop
 

@@ -10,8 +10,9 @@
  *   - there is at least one such use.
  * Anything else is a problem: an exported constant may be used in files the
  * sync does not follow, and a use in another form (`NAME + "/x.webp"`,
- * `${NAME}/${name}`) is a reference it has not read. A false problem stops the
- * prune and fails the run loudly; a missed reference would delete a file in use.
+ * `${NAME}/${name}`) is a reference it has not read. A false problem fails the
+ * run loudly and makes the prune command refuse; a missed reference would put
+ * a file in use on the prune list.
  */
 import { lineAt } from "../files.mjs";
 import { readLiteralFilename } from "./literal-filename.mjs";
