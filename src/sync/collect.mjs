@@ -8,20 +8,19 @@
  *   2. A prefix held in a constant and joined in a template literal:
  *        const STORAGE = "https://storage.googleapis.com/ployai/<uuid>/user";
  *        `${STORAGE}/<file>`
- * Anything built another way is missed here; `mirror-check-assets` catches it
- * after the build for prerendered pages.
+ *      (rules for the constant: prefix-constant.mjs)
+ * A reference the sync can see but not read (a prefix that is not a simple
+ * constant, a filename built at run time, an "&" in a name) is a problem, so
+ * the caller skips the prune. Anything built in a way the sync cannot see at
+ * all is missed here; `mirror-check-assets` catches it after the build.
  */
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { projectPath, readTextFile, walkFiles } from "../files.mjs";
-import {
-  LOCAL_DIR,
-  bucketAddress,
-  bucketAddressRegex,
-  bucketPrefixRegex,
-  decodeFilename,
-} from "../pattern.mjs";
+import { LOCAL_DIR, bucketAddress, bucketPrefixRegex, decodeFilename } from "../pattern.mjs";
+import { readLiteralFilename } from "./literal-filename.mjs";
+import { readPrefixConstant } from "./prefix-constant.mjs";
 
 /**
  * @typedef {Map<string, { address: string; files: Set<string> }>} Wanted
@@ -33,10 +32,6 @@ function isSafeFilename(name) {
   return name !== "." && name !== ".." && !name.includes("/") && !name.includes("\\");
 }
 
-/** @param {string} text */
-function escapeRegExp(text) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 /**
  * @param {string} root project root
@@ -79,25 +74,47 @@ export async function collectReferences(root) {
       const text = await readTextFile(file);
       if (text === null) continue;
 
-      for (const match of text.matchAll(bucketAddressRegex())) {
-        want(match[1], match[2], file);
-      }
-
-      // A prefix stored on its own in a constant, then joined in template literals.
       for (const prefix of text.matchAll(bucketPrefixRegex())) {
-        const after = text[prefix.index + prefix[0].length];
-        if (after === "/") continue; // full address, handled above
-        const before = text.slice(0, prefix.index);
-        const declared = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*["'`]$/.exec(before);
-        if (!declared) {
-          problems.push(
-            `bucket prefix without a filename in ${where(file)}, and not a simple constant. The sync reads only full addresses and a prefix held in a simple const, let or var joined in a template literal; see "What the sync can read" in the mirror-tools README`,
-          );
+        const uuid = prefix[1];
+        const end = prefix.index + prefix[0].length;
+
+        // A full address: the prefix, "/", then a filename.
+        if (text[end] === "/") {
+          const filename = readLiteralFilename(text, end + 1);
+          switch (filename.status) {
+            case "ok":
+              want(uuid, filename.raw, file);
+              break;
+            case "empty":
+              break;
+            case "template":
+              problems.push(
+                `filename "${filename.raw}" in ${where(file)} is built from a template expression; the sync needs a literal filename`,
+              );
+              break;
+            case "ampersand":
+              problems.push(`filename "${filename.raw}" in ${where(file)} contains "&", which the sync does not support`);
+              break;
+          }
           continue;
         }
-        const use = new RegExp(`\\$\\{${escapeRegExp(declared[1])}\\}/([^\\s"'\`()<>\\\\?#,$]+)`, "g");
-        for (const match of text.matchAll(use)) {
-          want(prefix[1], match[1], file);
+
+        // A prefix on its own, which must be a constant the sync can follow.
+        const constant = readPrefixConstant(text, prefix.index);
+        switch (constant.kind) {
+          case "not-a-constant":
+            problems.push(
+              `bucket prefix without a filename in ${where(file)}, and not a simple constant. The sync reads only full addresses and a prefix held in a simple const, let or var whose every use is \`\${NAME}/<filename>\`; see "What the sync can read" in the mirror-tools README`,
+            );
+            break;
+          case "constant":
+            for (const raw of constant.filenames) want(uuid, raw, file);
+            if (constant.reason !== null) {
+              problems.push(
+                `prefix constant ${constant.name} in ${where(file)} ${constant.reason}. The sync reads a prefix constant only when it is not exported and every use in the same file is \`\${${constant.name}}/<filename>\` with a literal filename; see "What the sync can read" in the mirror-tools README`,
+              );
+            }
+            break;
         }
       }
     }

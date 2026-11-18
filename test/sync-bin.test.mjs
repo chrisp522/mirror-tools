@@ -62,3 +62,19 @@ test("does not prune when the source has a reference it cannot read", async (t) 
   );
   assert.deepEqual(await readdir(join(root, "public", "ploy-assets")), ["hero.webp"]);
 });
+
+test("keeps committed copies when a prefix constant is used where the sync cannot follow it", async (t) => {
+  const root = await makeProject(t, {
+    "src/config.ts": `export const STORAGE = "${PREFIX}";`,
+    "src/Hero.astro": 'import { STORAGE } from "./config";\nconst a = `${STORAGE}/hero.webp`;',
+    "src/Logo.ts": `const B = "${PREFIX}";\nconst b = B + "/logo.webp";`,
+    "public/ploy-assets/hero.webp": "h",
+    "public/ploy-assets/logo.webp": "l",
+  });
+  const run = runBin("mirror-sync-assets", root);
+  assert.equal(run.status, 1);
+  assert.match(run.stdout, /removed \(skipped: /);
+  assert.match(run.stderr, /prefix constant STORAGE in src\/config\.ts is exported/);
+  assert.match(run.stderr, /prefix constant B in src\/Logo\.ts has a use on line 2/);
+  assert.deepEqual((await readdir(join(root, "public", "ploy-assets"))).sort(), ["hero.webp", "logo.webp"]);
+});

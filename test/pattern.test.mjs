@@ -5,8 +5,9 @@ import {
   LOCAL_DIR,
   LOCAL_PREFIX,
   bucketAddress,
-  bucketAddressRegex,
   bucketPrefixRegex,
+  filenameAt,
+  isEscapedQuoteAt,
   decodeFilename,
   localReferenceRegex,
   localiseBucketAddresses,
@@ -23,22 +24,6 @@ test("constants describe the bucket and the local folder", () => {
 
 test("bucketAddress builds a full address", () => {
   assert.equal(bucketAddress(UUID, "a.webp"), `${PREFIX}/a.webp`);
-});
-
-test("bucketAddressRegex finds full addresses with uuid and filename", () => {
-  const text = `<img src="${PREFIX}/hero-1.webp"> url('${PREFIX}/font.woff2') ${PREFIX}/x%20y.png`;
-  const found = [...text.matchAll(bucketAddressRegex())].map((m) => [m[1], m[2]]);
-  assert.deepEqual(found, [
-    [UUID, "hero-1.webp"],
-    [UUID, "font.woff2"],
-    [UUID, "x%20y.png"],
-  ]);
-});
-
-test("bucketAddressRegex stops the filename at a query, fragment, quote or comma", () => {
-  const text = `"${PREFIX}/a.webp?w=10" "${PREFIX}/b.webp#top" srcset="${PREFIX}/c.webp 1x,${PREFIX}/d.webp 2x"`;
-  const names = [...text.matchAll(bucketAddressRegex())].map((m) => m[2]);
-  assert.deepEqual(names, ["a.webp", "b.webp", "c.webp", "d.webp"]);
 });
 
 test("bucketPrefixRegex matches a full address and a prefix-only string literal", () => {
@@ -71,12 +56,7 @@ test("things that must not match", () => {
   ];
   for (const text of cases) {
     assert.equal([...text.matchAll(bucketPrefixRegex())].length, 0, `prefix: ${text}`);
-    assert.equal([...text.matchAll(bucketAddressRegex())].length, 0, `address: ${text}`);
   }
-});
-
-test("a prefix with an empty filename is not a full address", () => {
-  assert.equal([...`"${PREFIX}/"`.matchAll(bucketAddressRegex())].length, 0);
 });
 
 test("localReferenceRegex finds /ploy-assets/<file>", () => {
@@ -111,10 +91,10 @@ test("localiseBucketAddresses leaves other code alone", () => {
 });
 
 test("regex factories return fresh global regexes", () => {
-  const a = bucketAddressRegex();
-  const b = bucketAddressRegex();
+  const a = bucketPrefixRegex();
+  const b = bucketPrefixRegex();
   assert.notEqual(a, b);
-  assert.ok(a.global && bucketPrefixRegex().global && localReferenceRegex().global);
+  assert.ok(a.global && localReferenceRegex().global);
 });
 
 test("decodeFilename decodes percent sequences", () => {
@@ -126,4 +106,33 @@ test("decodeFilename decodes percent sequences", () => {
 test("decodeFilename keeps a name that cannot be decoded as written", () => {
   assert.equal(decodeFilename("100%.webp"), "100%.webp");
   assert.equal(decodeFilename("a%zzb.webp"), "a%zzb.webp");
+});
+
+
+test("filenameAt reads a filename up to its first delimiter", () => {
+  const cases = [
+    ["a.webp?w=10", "a.webp"],
+    ["b.webp#top", "b.webp"],
+    ["c.webp 1x,d.webp 2x", "c.webp"],
+    ["d.webp,e.webp", "d.webp"],
+    ['e.webp"', "e.webp"],
+    ["f.webp&quot;]}", "f.webp"],
+    ["x%20y.png)", "x%20y.png"],
+  ];
+  for (const [text, name] of cases) assert.equal(filenameAt(`/${text}`, 1), name, text);
+  assert.equal(filenameAt('/"', 1), "");
+});
+
+test("localReferenceRegex stops at &, so HTML-escaped text does not run into the name", () => {
+  const text = `props="{&quot;src&quot;:[0,&quot;/ploy-assets/hero.webp&quot;]}"`;
+  assert.deepEqual([...text.matchAll(localReferenceRegex())].map((m) => m[1]), ["hero.webp"]);
+});
+
+test("isEscapedQuoteAt recognises HTML-escaped quotes only", () => {
+  for (const quote of ["&quot;", "&#34;", "&#x22;", "&apos;", "&#39;", "&#x27;", "&QUOT;"]) {
+    assert.equal(isEscapedQuoteAt(`a${quote}b`, 1), true, quote);
+  }
+  for (const other of ["&amp;", "&pepper.webp", "&lt;", "&quot"]) {
+    assert.equal(isEscapedQuoteAt(`a${other}`, 1), false, other);
+  }
 });

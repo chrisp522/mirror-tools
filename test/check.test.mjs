@@ -75,3 +75,11 @@ test("a reference with a bad percent sequence is looked up as written", async (t
   });
   assert.deepEqual(await checkBuildOutput(root), { status: "ok", shippedCount: 1 });
 });
+
+test("a reference inside HTML-escaped props is read up to the escaped quote", async (t) => {
+  const root = await makeProject(t, {
+    [`${SHIPPED}/hero.webp`]: Buffer.from([0]),
+    ".vercel/output/static/index.html": `<astro-island props="{&quot;src&quot;:[0,&quot;/ploy-assets/hero.webp&quot;]}"></astro-island>`,
+  });
+  assert.deepEqual(await checkBuildOutput(root), { status: "ok", shippedCount: 1 });
+});

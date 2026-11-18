@@ -16,7 +16,10 @@ export const LOCAL_DIR = "ploy-assets";
 export const LOCAL_PREFIX = `/${LOCAL_DIR}`;
 
 const PREFIX_SOURCE = String.raw`https://storage\.googleapis\.com/ployai/([0-9a-f-]+)/user`;
-const FILENAME_SOURCE = String.raw`[^\s"'\x60()<>\\?#,]+`;
+// A filename ends at whitespace, a quote, a bracket, a query, a fragment, a comma
+// or "&". Stopping at "&" keeps HTML-escaped text such as `hero.webp&quot;` out
+// of the name; a name that really contains "&" is refused by the sync.
+const FILENAME_SOURCE = String.raw`[^\s"'\x60()<>\\?#,&]+`;
 
 /**
  * The bucket prefix (".../<uuid>/user"), when followed by "/" or the end of a
@@ -28,14 +31,33 @@ export function bucketPrefixRegex() {
   return new RegExp(`${PREFIX_SOURCE}(?=[/"'\x60])`, "g");
 }
 
-/** A full bucket address. Group 1 is the uuid, group 2 the filename. */
-export function bucketAddressRegex() {
-  return new RegExp(`${PREFIX_SOURCE}/(${FILENAME_SOURCE})`, "g");
-}
-
 /** A local reference "/ploy-assets/<filename>". Group 1 is the filename. */
 export function localReferenceRegex() {
   return new RegExp(`${LOCAL_PREFIX}/(${FILENAME_SOURCE})`, "g");
+}
+
+/**
+ * The filename that starts at `index` in `text`, as written, or "" when none does.
+ * @param {string} text
+ * @param {number} index
+ */
+export function filenameAt(text, index) {
+  const sticky = new RegExp(FILENAME_SOURCE, "y");
+  sticky.lastIndex = index;
+  return sticky.exec(text)?.[0] ?? "";
+}
+
+/**
+ * Whether an HTML-escaped quote (`&quot;`, `&#34;`, `&#x22;`, `&apos;`,
+ * `&#39;`, `&#x27;`) starts at `index`. Such a quote ends a filename the same
+ * way a plain quote does.
+ * @param {string} text
+ * @param {number} index
+ */
+export function isEscapedQuoteAt(text, index) {
+  const sticky = /&(?:quot|apos|#34|#39|#x22|#x27);/iy;
+  sticky.lastIndex = index;
+  return sticky.test(text);
 }
 
 /**
