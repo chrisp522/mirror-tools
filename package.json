@@ -1,0 +1,28 @@
+{
+  "name": "mirror-tools",
+  "version": "1.0.5",
+  "description": "Build-time tools for hosting a mirror of a Ploy site with local copies of its storage-bucket images and fonts.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    "./vite": {
+      "types": "./src/vite.d.mts",
+      "default": "./src/vite.mjs"
+    }
+  },
+  "bin": {
+    "mirror-sync-assets": "./bin/mirror-sync-assets.mjs",
+    "mirror-prune-assets": "./bin/mirror-prune-assets.mjs",
+    "mirror-check-assets": "./bin/mirror-check-assets.mjs"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  }
+}
